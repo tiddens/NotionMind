@@ -93,6 +93,7 @@ export function useKeyboard(actions: KeyboardActions) {
           actions.navigateRight();
           break;
         case 'Tab':
+        case 'Insert':
           e.preventDefault();
           actions.doAddChild();
           break;

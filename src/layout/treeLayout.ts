@@ -24,10 +24,12 @@ function layoutSubtree(
   x: number,
   yCenter: number,
   side: 'left' | 'right',
+  depth: number,
+  branchIndex: number,
   result: Map<string, LayoutNode>
 ): void {
   const { width, height } = measureNode(node);
-  result.set(node.id, { id: node.id, x, y: yCenter, width, height, side });
+  result.set(node.id, { id: node.id, x, y: yCenter, width, height, side, depth, branchIndex });
 
   if (node.collapsed || node.children.length === 0) return;
 
@@ -45,7 +47,7 @@ function layoutSubtree(
     const { width: childWidth } = measureNode(child);
     const adjustedX = side === 'left' ? childX - childWidth : childX;
 
-    layoutSubtree(child, adjustedX, childYCenter, side, result);
+    layoutSubtree(child, adjustedX, childYCenter, side, depth + 1, branchIndex, result);
     currentY += childSubtreeHeight + LAYOUT.VERTICAL_GAP;
   }
 }
@@ -84,11 +86,20 @@ export function computeLayout(root: MindMapNode): Map<string, LayoutNode> {
     width: rootWidth,
     height: rootHeight,
     side: 'right',
+    depth: 0,
+    branchIndex: -1,
   });
 
   if (root.collapsed || root.children.length === 0) return result;
 
   const { right: rightChildren, left: leftChildren } = splitSides(root);
+
+  // Build a map from child id to its branch index (order among all root children)
+  let branchIdx = 0;
+  const branchMap = new Map<string, number>();
+  for (const child of root.children) {
+    branchMap.set(child.id, branchIdx++);
+  }
 
   // Layout right side
   const rightTotalHeight = rightChildren.reduce(
@@ -99,7 +110,7 @@ export function computeLayout(root: MindMapNode): Map<string, LayoutNode> {
     const subtreeH = computeSubtreeHeight(child);
     const childYCenter = currentY + subtreeH / 2;
     const childX = rootWidth / 2 + LAYOUT.HORIZONTAL_GAP;
-    layoutSubtree(child, childX, childYCenter, 'right', result);
+    layoutSubtree(child, childX, childYCenter, 'right', 1, branchMap.get(child.id) ?? 0, result);
     currentY += subtreeH + LAYOUT.VERTICAL_GAP;
   }
 
@@ -113,7 +124,7 @@ export function computeLayout(root: MindMapNode): Map<string, LayoutNode> {
     const childYCenter = currentY + subtreeH / 2;
     const { width: childWidth } = measureNode(child);
     const childX = -rootWidth / 2 - LAYOUT.HORIZONTAL_GAP - childWidth;
-    layoutSubtree(child, childX, childYCenter, 'left', result);
+    layoutSubtree(child, childX, childYCenter, 'left', 1, branchMap.get(child.id) ?? 0, result);
     currentY += subtreeH + LAYOUT.VERTICAL_GAP;
   }
 

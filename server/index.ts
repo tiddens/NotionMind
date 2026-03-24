@@ -7,6 +7,8 @@ const app = express();
 const PORT = parseInt(process.env.PORT || '3001', 10);
 
 app.use(cors());
+app.use(express.json());
+app.use(express.text());
 app.use('/api/files', filesRouter);
 
 // In production, serve the built frontend

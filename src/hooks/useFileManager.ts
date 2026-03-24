@@ -108,6 +108,29 @@ export function useFileManager() {
     return false;
   }, [loadFileList]);
 
+  const saveMeta = useCallback(async (name: string, meta: Record<string, unknown>): Promise<void> => {
+    const metaName = name + '.meta.json';
+    try {
+      await fetch(`/api/files/${encodeURIComponent(metaName)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify(meta),
+      });
+    } catch { /* ignore */ }
+  }, []);
+
+  const loadMeta = useCallback(async (name: string): Promise<Record<string, unknown> | null> => {
+    const metaName = name + '.meta.json';
+    try {
+      const res = await fetch(`/api/files/${encodeURIComponent(metaName)}`);
+      if (res.ok) {
+        const text = await res.text();
+        return JSON.parse(text);
+      }
+    } catch { /* ignore */ }
+    return null;
+  }, []);
+
   return {
     files,
     currentFile,
@@ -119,5 +142,7 @@ export function useFileManager() {
     deleteFile,
     renameFile,
     createFolder,
+    saveMeta,
+    loadMeta,
   };
 }

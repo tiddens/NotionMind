@@ -28,6 +28,9 @@ html, body, #root {
   border-radius: 3px;
 }
 
+/* File action buttons show on hover */
+div:hover > .file-actions { opacity: 1 !important; }
+
 /* Markdown preview styles */
 .md-preview h1 { font-size: 1.5em; margin: 0 0 0.5em; font-weight: 700; }
 .md-preview h2 { font-size: 1.25em; margin: 0.8em 0 0.4em; font-weight: 600; }

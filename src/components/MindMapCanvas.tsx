@@ -2,6 +2,7 @@ import { useRef, useMemo, useCallback, useState } from 'react';
 import type { MindMapNode as MindMapNodeType, LayoutNode } from '../types';
 import { computeLayout } from '../layout/treeLayout';
 import { serializeToMarkdown } from '../markdown/serializer';
+import { collectVisibleNodes, collectEdges } from '../model/MindMapTree';
 import { MindMapNode } from './MindMapNode';
 import { MindMapEdge } from './MindMapEdge';
 import { useTheme } from '../hooks/useTheme';
@@ -18,32 +19,6 @@ interface Props {
   onEditCancel: () => void;
   onTogglePreview: () => void;
   previewVisible: boolean;
-}
-
-interface Edge {
-  parentId: string;
-  childId: string;
-}
-
-function collectEdges(node: MindMapNodeType): Edge[] {
-  const edges: Edge[] = [];
-  if (!node.collapsed) {
-    for (const child of node.children) {
-      edges.push({ parentId: node.id, childId: child.id });
-      edges.push(...collectEdges(child));
-    }
-  }
-  return edges;
-}
-
-function collectNodes(node: MindMapNodeType): MindMapNodeType[] {
-  const nodes: MindMapNodeType[] = [node];
-  if (!node.collapsed) {
-    for (const child of node.children) {
-      nodes.push(...collectNodes(child));
-    }
-  }
-  return nodes;
 }
 
 export function MindMapCanvas({
@@ -67,8 +42,8 @@ export function MindMapCanvas({
   const panStart = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
 
   const layoutMap = useMemo(() => computeLayout(root), [root]);
-  const edges = useMemo(() => collectEdges(root), [root]);
-  const visibleNodes = useMemo(() => collectNodes(root), [root]);
+  const edges = useMemo(() => collectEdges(root) as { parentId: string; childId: string }[], [root]);
+  const visibleNodes = useMemo(() => collectVisibleNodes(root), [root]);
 
   // Compute SVG viewBox from layout bounds
   const bounds = useMemo(() => {
@@ -80,9 +55,16 @@ export function MindMapCanvas({
       maxY = Math.max(maxY, l.y + l.height / 2 + 20);
     });
     if (minX === Infinity) {
-      return { x: -200, y: -200, w: 400, h: 400 };
+      return { x: -500, y: -300, w: 1000, h: 600 };
     }
-    return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+    // Enforce minimum viewBox so a single node doesn't fill the screen
+    const rawW = maxX - minX;
+    const rawH = maxY - minY;
+    const w = Math.max(rawW, 800);
+    const h = Math.max(rawH, 400);
+    const cx = minX + rawW / 2;
+    const cy = minY + rawH / 2;
+    return { x: cx - w / 2, y: cy - h / 2, w, h };
   }, [layoutMap]);
 
   const handleWheel = useCallback((e: React.WheelEvent) => {

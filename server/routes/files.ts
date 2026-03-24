@@ -4,13 +4,11 @@ import path from 'path';
 
 const MAPS_DIR = process.env.NOTIONMIND_DIR || path.join(process.cwd(), 'maps');
 
-// Ensure directory exists
 if (!fs.existsSync(MAPS_DIR)) {
   fs.mkdirSync(MAPS_DIR, { recursive: true });
 }
 
 function safePath(name: string): string | null {
-  // Allow subdirectory paths like "folder/file.md" but prevent traversal
   const normalized = path.normalize(name).replace(/\\/g, '/');
   if (normalized.startsWith('..') || normalized.startsWith('/') || normalized.includes('/../')) {
     return null;
@@ -18,9 +16,10 @@ function safePath(name: string): string | null {
   return normalized;
 }
 
-function safeName(name: string): string | null {
+function safeFile(name: string): string | null {
   const safe = safePath(name);
-  if (!safe || !safe.endsWith('.md')) return null;
+  if (!safe) return null;
+  if (!safe.endsWith('.md') && !safe.endsWith('.meta.json')) return null;
   return safe;
 }
 
@@ -33,11 +32,7 @@ interface DirEntry {
 function readDirRecursive(dir: string, prefix = ''): DirEntry[] {
   const entries: DirEntry[] = [];
   let items: string[];
-  try {
-    items = fs.readdirSync(dir).sort();
-  } catch {
-    return entries;
-  }
+  try { items = fs.readdirSync(dir).sort(); } catch { return entries; }
 
   for (const item of items) {
     if (item.startsWith('.')) continue;
@@ -57,49 +52,38 @@ function readDirRecursive(dir: string, prefix = ''): DirEntry[] {
 
 const router = Router();
 
-// List all files and folders recursively
+// List .md files recursively
 router.get('/', (_req: Request, res: Response) => {
   try {
-    const tree = readDirRecursive(MAPS_DIR);
-    res.json(tree);
+    res.json(readDirRecursive(MAPS_DIR));
   } catch {
     res.status(500).json({ error: 'Failed to list files' });
   }
 });
 
-// Read a file (supports subpaths like folder/file.md)
+// Read a file
 router.get('/:name', (req: Request, res: Response) => {
-  const name = safeName(req.params.name);
+  const name = safeFile(req.params.name);
   if (!name) { res.status(400).json({ error: 'Invalid filename' }); return; }
-
   const filePath = path.join(MAPS_DIR, name);
   if (!fs.existsSync(filePath)) { res.status(404).json({ error: 'Not found' }); return; }
-
   try {
-    const content = fs.readFileSync(filePath, 'utf-8');
-    res.type('text/plain').send(content);
+    res.type('text/plain').send(fs.readFileSync(filePath, 'utf-8'));
   } catch {
     res.status(500).json({ error: 'Failed to read file' });
   }
 });
 
-// Write/overwrite a file (auto-creates parent folders)
+// Write/overwrite a file
 router.post('/:name', (req: Request, res: Response) => {
-  const name = safeName(req.params.name);
+  const name = safeFile(req.params.name);
   if (!name) { res.status(400).json({ error: 'Invalid filename' }); return; }
-
   const filePath = path.join(MAPS_DIR, name);
   try {
     const dir = path.dirname(filePath);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-
-    const chunks: Buffer[] = [];
-    req.on('data', (chunk: Buffer) => chunks.push(chunk));
-    req.on('end', () => {
-      const body = Buffer.concat(chunks).toString('utf-8');
-      fs.writeFileSync(filePath, body, 'utf-8');
-      res.json({ ok: true });
-    });
+    fs.writeFileSync(filePath, typeof req.body === 'string' ? req.body : JSON.stringify(req.body), 'utf-8');
+    res.json({ ok: true });
   } catch {
     res.status(500).json({ error: 'Failed to write file' });
   }
@@ -107,12 +91,10 @@ router.post('/:name', (req: Request, res: Response) => {
 
 // Delete a file
 router.delete('/:name', (req: Request, res: Response) => {
-  const name = safeName(req.params.name);
+  const name = safeFile(req.params.name);
   if (!name) { res.status(400).json({ error: 'Invalid filename' }); return; }
-
   const filePath = path.join(MAPS_DIR, name);
   if (!fs.existsSync(filePath)) { res.status(404).json({ error: 'Not found' }); return; }
-
   try {
     fs.unlinkSync(filePath);
     res.json({ ok: true });
@@ -123,49 +105,35 @@ router.delete('/:name', (req: Request, res: Response) => {
 
 // Rename a file
 router.patch('/:name', (req: Request, res: Response) => {
-  const name = safeName(req.params.name);
+  const name = safeFile(req.params.name);
   if (!name) { res.status(400).json({ error: 'Invalid filename' }); return; }
-
   const filePath = path.join(MAPS_DIR, name);
   if (!fs.existsSync(filePath)) { res.status(404).json({ error: 'Not found' }); return; }
-
-  const chunks: Buffer[] = [];
-  req.on('data', (chunk: Buffer) => chunks.push(chunk));
-  req.on('end', () => {
-    try {
-      const body = JSON.parse(Buffer.concat(chunks).toString('utf-8'));
-      const newName = safeName(body.newName);
-      if (!newName) { res.status(400).json({ error: 'Invalid new filename' }); return; }
-
-      const newPath = path.join(MAPS_DIR, newName);
-      const newDir = path.dirname(newPath);
-      if (!fs.existsSync(newDir)) fs.mkdirSync(newDir, { recursive: true });
-
-      fs.renameSync(filePath, newPath);
-      res.json({ ok: true, name: newName });
-    } catch {
-      res.status(500).json({ error: 'Failed to rename file' });
-    }
-  });
+  try {
+    const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+    const newName = safeFile(body.newName);
+    if (!newName) { res.status(400).json({ error: 'Invalid new filename' }); return; }
+    const newPath = path.join(MAPS_DIR, newName);
+    const newDir = path.dirname(newPath);
+    if (!fs.existsSync(newDir)) fs.mkdirSync(newDir, { recursive: true });
+    fs.renameSync(filePath, newPath);
+    res.json({ ok: true, name: newName });
+  } catch {
+    res.status(500).json({ error: 'Failed to rename file' });
+  }
 });
 
 // Create a folder
 router.post('/', (req: Request, res: Response) => {
-  const chunks: Buffer[] = [];
-  req.on('data', (chunk: Buffer) => chunks.push(chunk));
-  req.on('end', () => {
-    try {
-      const body = JSON.parse(Buffer.concat(chunks).toString('utf-8'));
-      const folderName = safePath(body.folder);
-      if (!folderName) { res.status(400).json({ error: 'Invalid folder name' }); return; }
-
-      const folderPath = path.join(MAPS_DIR, folderName);
-      fs.mkdirSync(folderPath, { recursive: true });
-      res.json({ ok: true });
-    } catch {
-      res.status(500).json({ error: 'Failed to create folder' });
-    }
-  });
+  try {
+    const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+    const folderName = safePath(body.folder);
+    if (!folderName) { res.status(400).json({ error: 'Invalid folder name' }); return; }
+    fs.mkdirSync(path.join(MAPS_DIR, folderName), { recursive: true });
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ error: 'Failed to create folder' });
+  }
 });
 
 export default router;

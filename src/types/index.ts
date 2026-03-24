@@ -13,6 +13,8 @@ export interface LayoutNode {
   width: number;
   height: number;
   side: 'left' | 'right';
+  depth: number;
+  branchIndex: number; // index of the top-level branch this node belongs to
 }
 
 export interface FileEntry {
