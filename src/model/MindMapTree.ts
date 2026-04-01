@@ -142,8 +142,23 @@ export function demote(root: MindMapNode, nodeId: string): MindMapNode {
   const tree = cloneTree(root);
   const parent = findParent(tree, nodeId);
   if (!parent) return tree;
+
+  // For root children, find previous same-side sibling
+  if (parent.id === tree.id) {
+    const sameSide = getSameSideSiblings(tree, nodeId);
+    const sideIdx = sameSide.findIndex(c => c.id === nodeId);
+    if (sideIdx <= 0) return tree;
+    const prevSibling = sameSide[sideIdx - 1];
+    const idx = tree.children.findIndex(c => c.id === nodeId);
+    const [node] = tree.children.splice(idx, 1);
+    delete node.side; // no longer a root child
+    prevSibling.children.push(node);
+    prevSibling.collapsed = false;
+    return tree;
+  }
+
   const idx = findSiblingIndex(parent, nodeId);
-  if (idx <= 0) return tree; // No previous sibling
+  if (idx <= 0) return tree;
   const [node] = parent.children.splice(idx, 1);
   const prevSibling = parent.children[idx - 1];
   prevSibling.children.push(node);
@@ -176,6 +191,20 @@ export function updateText(root: MindMapNode, nodeId: string, text: string): Min
   const tree = cloneTree(root);
   const node = findNode(tree, nodeId);
   if (node) node.text = text;
+  return tree;
+}
+
+export function updateNodeImage(root: MindMapNode, nodeId: string, imageUrl: string): MindMapNode {
+  const tree = cloneTree(root);
+  const node = findNode(tree, nodeId);
+  if (node) node.imageUrl = imageUrl;
+  return tree;
+}
+
+export function removeNodeImage(root: MindMapNode, nodeId: string): MindMapNode {
+  const tree = cloneTree(root);
+  const node = findNode(tree, nodeId);
+  if (node) delete node.imageUrl;
   return tree;
 }
 
@@ -244,15 +273,184 @@ export function getDeepestLastChild(node: MindMapNode): MindMapNode {
 export function moveLeft(root: MindMapNode, nodeId: string): MindMapNode {
   if (root.id === nodeId) return moveAllToSide(root, 'left');
   const parent = findParent(root, nodeId);
-  if (parent && parent.id === root.id) return moveToSide(root, nodeId, 'left');
+  if (parent && parent.id === root.id) {
+    // Root children: switch side to left
+    return moveToSide(root, nodeId, 'left');
+  }
   return promote(root, nodeId);
 }
 
 export function moveRight(root: MindMapNode, nodeId: string): MindMapNode {
   if (root.id === nodeId) return moveAllToSide(root, 'right');
   const parent = findParent(root, nodeId);
-  if (parent && parent.id === root.id) return moveToSide(root, nodeId, 'right');
+  if (parent && parent.id === root.id) {
+    // Root child: try demote first, fall back to side-switch if no prev sibling
+    const sameSide = getSameSideSiblings(root, nodeId);
+    const sideIdx = sameSide.findIndex(c => c.id === nodeId);
+    if (sideIdx <= 0) {
+      // No prev same-side sibling — switch side to right
+      return moveToSide(root, nodeId, 'right');
+    }
+  }
   return demote(root, nodeId);
+}
+
+// --- Batch operations (multi-select) ---
+
+/**
+ * Move a group of sibling nodes up/down together.
+ * All nodeIds must share the same parent. Non-siblings are ignored.
+ */
+export function moveBatchAmongSiblings(root: MindMapNode, nodeIds: Set<string>, direction: 'up' | 'down'): MindMapNode {
+  if (nodeIds.size === 0) return root;
+  const tree = cloneTree(root);
+  const firstId = [...nodeIds][0];
+  const parent = findParent(tree, firstId);
+  if (!parent) return tree;
+
+  // Get the sibling list (side-aware for root children)
+  const siblings = parent.id === tree.id
+    ? getSameSideSiblings(tree, firstId)
+    : parent.children;
+
+  // Find indices of selected nodes within the sibling list
+  const selectedIndices = siblings
+    .map((c, i) => nodeIds.has(c.id) ? i : -1)
+    .filter(i => i >= 0)
+    .sort((a, b) => a - b);
+
+  if (selectedIndices.length === 0) return tree;
+
+  if (direction === 'up') {
+    const topIdx = selectedIndices[0];
+    if (topIdx <= 0) return tree; // already at top
+    // For root children, we need to swap in tree.children using actual indices
+    if (parent.id === tree.id) {
+      const aboveNode = siblings[topIdx - 1];
+      const aboveActual = tree.children.indexOf(aboveNode);
+      // Move the "above" node to after the last selected
+      const lastSelected = siblings[selectedIndices[selectedIndices.length - 1]];
+      tree.children.splice(aboveActual, 1);
+      const newLastActual = tree.children.indexOf(lastSelected);
+      tree.children.splice(newLastActual + 1, 0, aboveNode);
+    } else {
+      // Simple: move the node above the block to after the block
+      const above = parent.children[topIdx - 1];
+      parent.children.splice(topIdx - 1, 1);
+      const lastIdx = selectedIndices[selectedIndices.length - 1] - 1; // shifted by removal
+      parent.children.splice(lastIdx + 1, 0, above);
+    }
+  } else {
+    const bottomIdx = selectedIndices[selectedIndices.length - 1];
+    if (bottomIdx >= siblings.length - 1) return tree; // already at bottom
+    if (parent.id === tree.id) {
+      const belowNode = siblings[bottomIdx + 1];
+      const belowActual = tree.children.indexOf(belowNode);
+      const firstSelected = siblings[selectedIndices[0]];
+      const firstActual = tree.children.indexOf(firstSelected);
+      tree.children.splice(belowActual, 1);
+      tree.children.splice(firstActual, 0, belowNode);
+    } else {
+      const below = parent.children[bottomIdx + 1];
+      parent.children.splice(bottomIdx + 1, 1);
+      parent.children.splice(selectedIndices[0], 0, below);
+    }
+  }
+
+  return tree;
+}
+
+/**
+ * Move a group of sibling nodes left.
+ * Root children: switch side to left.
+ * Nested: promote all (preserving order).
+ */
+export function moveBatchLeft(root: MindMapNode, nodeIds: Set<string>): MindMapNode {
+  if (nodeIds.size === 0) return root;
+  const tree = cloneTree(root);
+  const firstId = [...nodeIds][0];
+  const parent = findParent(tree, firstId);
+  if (!parent) return tree;
+
+  if (parent.id === tree.id) {
+    // Root children: switch side to left
+    for (const id of nodeIds) {
+      const node = findNode(tree, id);
+      if (node) node.side = 'left';
+    }
+    return tree;
+  }
+
+  // Nested: promote all (process in reverse order to maintain positions)
+  let result = tree;
+  const ids = [...nodeIds].reverse();
+  for (const id of ids) result = promote(result, id);
+  return result;
+}
+
+/**
+ * Move a group of sibling nodes right (demote into prev sibling).
+ * All selected nodes go into the same target to stay together.
+ * Works for both root children and nested children.
+ */
+export function moveBatchRight(root: MindMapNode, nodeIds: Set<string>): MindMapNode {
+  if (nodeIds.size === 0) return root;
+  const tree = cloneTree(root);
+  const firstId = [...nodeIds][0];
+  const parent = findParent(tree, firstId);
+  if (!parent) return tree;
+
+  // For root children, use same-side siblings to find the target
+  if (parent.id === tree.id) {
+    const sameSide = getSameSideSiblings(tree, firstId);
+    const selectedInOrder = sameSide.filter(c => nodeIds.has(c.id));
+    if (selectedInOrder.length === 0) return tree;
+    const firstSideIdx = sameSide.indexOf(selectedInOrder[0]);
+
+    // Find first non-selected node above on the same side
+    let targetIdx = firstSideIdx - 1;
+    while (targetIdx >= 0 && nodeIds.has(sameSide[targetIdx].id)) targetIdx--;
+    if (targetIdx < 0) {
+      // No target to demote into — switch sides to right instead
+      for (const id of nodeIds) {
+        const node = findNode(tree, id);
+        if (node) node.side = 'right';
+      }
+      return tree;
+    }
+    const target = sameSide[targetIdx];
+
+    // Remove selected from tree.children and add to target
+    for (const sel of selectedInOrder) {
+      const idx = tree.children.indexOf(sel);
+      if (idx >= 0) {
+        tree.children.splice(idx, 1);
+        delete sel.side;
+      }
+    }
+    target.children.push(...selectedInOrder);
+    target.collapsed = false;
+    return tree;
+  }
+
+  // Nested: find prev non-selected sibling
+  const children = parent.children;
+  const selectedInOrder = children.filter(c => nodeIds.has(c.id));
+  if (selectedInOrder.length === 0) return tree;
+  const firstIdx = children.indexOf(selectedInOrder[0]);
+  let targetIdx = firstIdx - 1;
+  while (targetIdx >= 0 && nodeIds.has(children[targetIdx].id)) targetIdx--;
+  if (targetIdx < 0) return tree;
+  const target = children[targetIdx];
+
+  for (const sel of [...selectedInOrder].reverse()) {
+    const idx = children.indexOf(sel);
+    if (idx >= 0) children.splice(idx, 1);
+  }
+  target.children.push(...selectedInOrder);
+  target.collapsed = false;
+
+  return tree;
 }
 
 // --- Side metadata helpers ---

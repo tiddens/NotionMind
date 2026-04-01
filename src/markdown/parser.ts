@@ -7,23 +7,25 @@ interface ParsedLine {
 }
 
 function parseLine(line: string): ParsedLine | null {
-  // Try heading: # text, ## text, etc.
   const headingMatch = line.match(/^(#{1,6})\s+(.+)$/);
   if (headingMatch) {
-    const level = headingMatch[1].length; // 1-6
+    const level = headingMatch[1].length;
     return { depth: level - 1, text: headingMatch[2].trim() };
   }
 
-  // Try bullet: - text, with optional indentation
   const bulletMatch = line.match(/^(\s*)[-*+]\s+(.+)$/);
   if (bulletMatch) {
     const indent = bulletMatch[1].length;
     const bulletDepth = Math.floor(indent / 2);
-    // Bullets start at depth 6 (after H6 which is depth 5)
     return { depth: 6 + bulletDepth, text: bulletMatch[2].trim() };
   }
 
   return null;
+}
+
+function parseImageLine(line: string): string | null {
+  const match = line.match(/^\s*!\[.*?\]\((.+?)\)\s*$/);
+  return match ? match[1] : null;
 }
 
 function makeNode(text: string): MindMapNode {
@@ -32,29 +34,37 @@ function makeNode(text: string): MindMapNode {
 
 export function parseMarkdown(markdown: string): MindMapNode {
   const lines = markdown.split('\n');
-  const parsed: ParsedLine[] = [];
+
+  // First pass: parse structural lines, attach images to previous node
+  const nodes: { depth: number; text: string; imageUrl?: string }[] = [];
 
   for (const line of lines) {
+    // Check if this line is an image reference
+    const imageUrl = parseImageLine(line);
+    if (imageUrl && nodes.length > 0) {
+      nodes[nodes.length - 1].imageUrl = imageUrl;
+      continue;
+    }
+
     const result = parseLine(line);
-    if (result) parsed.push(result);
+    if (result) nodes.push(result);
   }
 
-  if (parsed.length === 0) {
+  if (nodes.length === 0) {
     return makeNode('Untitled');
   }
 
-  // First parsed line becomes root
-  const root = makeNode(parsed[0].text);
-  const rootDepth = parsed[0].depth;
+  const root = makeNode(nodes[0].text);
+  if (nodes[0].imageUrl) root.imageUrl = nodes[0].imageUrl;
+  const rootDepth = nodes[0].depth;
 
-  // Stack: [node, depth]
   const stack: [MindMapNode, number][] = [[root, rootDepth]];
 
-  for (let i = 1; i < parsed.length; i++) {
-    const { depth, text } = parsed[i];
+  for (let i = 1; i < nodes.length; i++) {
+    const { depth, text, imageUrl } = nodes[i];
     const newNode = makeNode(text);
+    if (imageUrl) newNode.imageUrl = imageUrl;
 
-    // Pop stack until we find a parent (a node with depth < current)
     while (stack.length > 1 && stack[stack.length - 1][1] >= depth) {
       stack.pop();
     }

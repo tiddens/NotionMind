@@ -7,6 +7,9 @@ export const LAYOUT = {
   HORIZONTAL_GAP: 50,
   VERTICAL_GAP: 10,
   ROOT_NODE_EXTRA_PADDING: 10,
+  IMAGE_MAX_WIDTH: 140,
+  IMAGE_MAX_HEIGHT: 90,
+  IMAGE_PADDING: 8,
 } as const;
 
 export type ColorTheme = typeof DARK_COLORS;

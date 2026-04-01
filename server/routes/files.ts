@@ -35,7 +35,7 @@ function readDirRecursive(dir: string, prefix = ''): DirEntry[] {
   try { items = fs.readdirSync(dir).sort(); } catch { return entries; }
 
   for (const item of items) {
-    if (item.startsWith('.')) continue;
+    if (item.startsWith('.') || item.startsWith('_')) continue;
     const fullPath = path.join(dir, item);
     const relativePath = prefix ? `${prefix}/${item}` : item;
     const stat = fs.statSync(fullPath);

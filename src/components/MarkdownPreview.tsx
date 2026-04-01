@@ -16,6 +16,14 @@ function renderMarkdownToHtml(md: string): string {
   let listDepth = 0;
 
   for (const line of lines) {
+    // Image line
+    const imgMatch = line.match(/^\s*!\[.*?\]\((.+?)\)\s*$/);
+    if (imgMatch) {
+      const src = `/api/images/${imgMatch[1]}`;
+      html.push(`<img src="${escapeHtml(src)}" alt="image" style="max-width:100%;border-radius:4px;margin:4px 0 8px" />`);
+      continue;
+    }
+
     const headingMatch = line.match(/^(#{1,6})\s+(.+)$/);
     if (headingMatch) {
       if (inList) { html.push('</ul>'.repeat(listDepth + 1)); inList = false; listDepth = 0; }
@@ -98,7 +106,6 @@ export function MarkdownPreview({ root, visible, onToggle }: Props) {
         </button>
       </div>
 
-      {/* Tabs: rendered / raw */}
       <div style={{ display: 'flex', flex: 1, flexDirection: 'column', overflow: 'hidden' }}>
         {/* Rendered view */}
         <div style={{ flex: 1, overflow: 'auto', padding: '16px' }}>

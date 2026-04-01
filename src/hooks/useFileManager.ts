@@ -131,6 +131,21 @@ export function useFileManager() {
     return null;
   }, []);
 
+  const uploadImage = useCallback(async (blob: Blob): Promise<string | null> => {
+    try {
+      const res = await fetch('/api/images', {
+        method: 'POST',
+        headers: { 'Content-Type': blob.type },
+        body: blob,
+      });
+      if (res.ok) {
+        const data = await res.json();
+        return data.filename;
+      }
+    } catch { /* ignore */ }
+    return null;
+  }, []);
+
   return {
     files,
     currentFile,
@@ -144,5 +159,6 @@ export function useFileManager() {
     createFolder,
     saveMeta,
     loadMeta,
+    uploadImage,
   };
 }

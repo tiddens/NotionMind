@@ -2,8 +2,8 @@ import { useEffect } from 'react';
 
 interface KeyboardActions {
   editingId: string | null;
-  navigateUp: () => void;
-  navigateDown: () => void;
+  navigateUp: (extend?: boolean) => void;
+  navigateDown: (extend?: boolean) => void;
   navigateLeft: () => void;
   navigateRight: () => void;
   doAddChild: () => void;
@@ -22,6 +22,8 @@ interface KeyboardActions {
   undo: () => void;
   redo: () => void;
   save: () => Promise<boolean>;
+  paste: () => Promise<void>;
+  copyNodes: () => void;
 }
 
 export function useKeyboard(actions: KeyboardActions) {
@@ -33,6 +35,20 @@ export function useKeyboard(actions: KeyboardActions) {
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault();
         actions.save();
+        return;
+      }
+
+      // Ctrl+C: Copy nodes (not while editing text)
+      if ((e.ctrlKey || e.metaKey) && e.key === 'c' && !isEditing) {
+        e.preventDefault();
+        actions.copyNodes();
+        return;
+      }
+
+      // Ctrl+V: Paste (not while editing text)
+      if ((e.ctrlKey || e.metaKey) && e.key === 'v' && !isEditing) {
+        e.preventDefault();
+        actions.paste();
         return;
       }
 
@@ -53,7 +69,7 @@ export function useKeyboard(actions: KeyboardActions) {
       // During editing, only handle Enter/Escape (handled in the input component)
       if (isEditing) return;
 
-      // Ctrl+Arrow: Move/promote/demote
+      // Ctrl+Arrow: Move/promote/demote (moves all selected nodes)
       if (e.ctrlKey || e.metaKey) {
         switch (e.key) {
           case 'ArrowUp':
@@ -75,14 +91,16 @@ export function useKeyboard(actions: KeyboardActions) {
         }
       }
 
+      // Shift+Arrow: Extend selection
+      // Plain Arrow: Navigate (single select)
       switch (e.key) {
         case 'ArrowUp':
           e.preventDefault();
-          actions.navigateUp();
+          actions.navigateUp(e.shiftKey);
           break;
         case 'ArrowDown':
           e.preventDefault();
-          actions.navigateDown();
+          actions.navigateDown(e.shiftKey);
           break;
         case 'ArrowLeft':
           e.preventDefault();
@@ -118,7 +136,6 @@ export function useKeyboard(actions: KeyboardActions) {
           actions.startEdit();
           break;
         default:
-          // Start editing with typed character
           if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
             e.preventDefault();
             actions.startEditEmpty(e.key);

@@ -3,20 +3,28 @@ import { LAYOUT } from '../utils/constants';
 
 function measureNode(node: MindMapNode): { width: number; height: number } {
   const textWidth = node.text.length * LAYOUT.NODE_CHAR_WIDTH + LAYOUT.NODE_PADDING_X * 2;
-  const width = Math.max(LAYOUT.NODE_MIN_WIDTH, textWidth);
-  return { width, height: LAYOUT.NODE_HEIGHT };
+  let width = Math.max(LAYOUT.NODE_MIN_WIDTH, textWidth);
+  let height = LAYOUT.NODE_HEIGHT;
+
+  if (node.imageUrl) {
+    width = Math.max(width, LAYOUT.IMAGE_MAX_WIDTH + LAYOUT.NODE_PADDING_X * 2);
+    height += LAYOUT.IMAGE_MAX_HEIGHT + LAYOUT.IMAGE_PADDING;
+  }
+
+  return { width, height };
 }
 
 function computeSubtreeHeight(node: MindMapNode): number {
+  const nodeHeight = measureNode(node).height;
   if (node.collapsed || node.children.length === 0) {
-    return LAYOUT.NODE_HEIGHT;
+    return nodeHeight;
   }
   let total = 0;
   for (const child of node.children) {
     total += computeSubtreeHeight(child);
   }
   total += (node.children.length - 1) * LAYOUT.VERTICAL_GAP;
-  return Math.max(LAYOUT.NODE_HEIGHT, total);
+  return Math.max(nodeHeight, total);
 }
 
 function layoutSubtree(
@@ -29,7 +37,7 @@ function layoutSubtree(
   result: Map<string, LayoutNode>
 ): void {
   const { width, height } = measureNode(node);
-  result.set(node.id, { id: node.id, x, y: yCenter, width, height, side, depth, branchIndex });
+  result.set(node.id, { id: node.id, x, y: yCenter, width, height, side, depth, branchIndex, hasImage: !!node.imageUrl });
 
   if (node.collapsed || node.children.length === 0) return;
 
@@ -88,6 +96,7 @@ export function computeLayout(root: MindMapNode): Map<string, LayoutNode> {
     side: 'right',
     depth: 0,
     branchIndex: -1,
+    hasImage: !!root.imageUrl,
   });
 
   if (root.collapsed || root.children.length === 0) return result;

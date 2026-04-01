@@ -10,6 +10,7 @@ import { useTheme } from '../hooks/useTheme';
 interface Props {
   root: MindMapNodeType;
   selectedId: string | null;
+  selectedIds: Set<string>;
   editingId: string | null;
   editText: string;
   onSelect: (id: string) => void;
@@ -19,11 +20,13 @@ interface Props {
   onEditCancel: () => void;
   onTogglePreview: () => void;
   previewVisible: boolean;
+  onRemoveImage: (nodeId: string) => void;
 }
 
 export function MindMapCanvas({
   root,
   selectedId,
+  selectedIds,
   editingId,
   editText,
   onSelect,
@@ -33,6 +36,7 @@ export function MindMapCanvas({
   onEditCancel,
   onTogglePreview,
   previewVisible,
+  onRemoveImage,
 }: Props) {
   const { colors } = useTheme();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -147,8 +151,9 @@ export function MindMapCanvas({
               key={node.id}
               layout={layout}
               text={node.text}
+              imageUrl={node.imageUrl}
               isRoot={node.id === root.id}
-              isSelected={node.id === selectedId}
+              isSelected={node.id === selectedId || selectedIds.has(node.id)}
               isEditing={node.id === editingId}
               isCollapsed={node.collapsed}
               hasChildren={node.children.length > 0}
@@ -158,13 +163,14 @@ export function MindMapCanvas({
               onEditCancel={onEditCancel}
               onClick={() => onSelect(node.id)}
               onDoubleClick={() => onStartEdit(node.id)}
+              onRemoveImage={node.imageUrl ? () => onRemoveImage(node.id) : undefined}
             />
           );
         })}
       </svg>
       {/* Top-right buttons */}
       <div style={{ position: 'absolute', top: 10, right: 10, display: 'flex', gap: 6 }}>
-        <CopyButton root={root} colors={colors} />
+        <CopyButtons root={root} colors={colors} />
         <button
           onClick={onTogglePreview}
           title={previewVisible ? 'Hide markdown preview' : 'Show markdown preview'}
@@ -186,33 +192,138 @@ export function MindMapCanvas({
   );
 }
 
-function CopyButton({ root, colors }: { root: MindMapNodeType; colors: Record<string, string> }) {
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = useCallback(() => {
-    const md = serializeToMarkdown(root);
-    navigator.clipboard.writeText(md).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
+async function fetchImageAsDataUrl(filename: string): Promise<string | null> {
+  try {
+    const res = await fetch(`/api/images/${filename}`);
+    if (!res.ok) return null;
+    const blob = await res.blob();
+    return new Promise(resolve => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.readAsDataURL(blob);
     });
+  } catch { return null; }
+}
+
+async function mdToHtml(md: string): Promise<string> {
+  const lines = md.split('\n');
+  const html: string[] = [];
+  let inList = false;
+  let listDepth = 0;
+
+  for (const line of lines) {
+    const imgMatch = line.match(/^\s*!\[.*?\]\((.+?)\)\s*$/);
+    if (imgMatch) {
+      const dataUrl = await fetchImageAsDataUrl(imgMatch[1]);
+      if (dataUrl) {
+        html.push(`<img src="${dataUrl}" alt="image" style="max-width:600px" />`);
+      }
+      continue;
+    }
+
+    const headingMatch = line.match(/^(#{1,6})\s+(.+)$/);
+    if (headingMatch) {
+      if (inList) { html.push('</ul>'.repeat(listDepth + 1)); inList = false; listDepth = 0; }
+      const level = headingMatch[1].length;
+      html.push(`<h${level}>${headingMatch[2]}</h${level}>`);
+      continue;
+    }
+
+    const bulletMatch = line.match(/^(\s*)[-*+]\s+(.+)$/);
+    if (bulletMatch) {
+      const depth = Math.floor(bulletMatch[1].length / 2);
+      if (!inList) { html.push('<ul>'); inList = true; listDepth = 0; }
+      while (listDepth < depth) { html.push('<ul>'); listDepth++; }
+      while (listDepth > depth) { html.push('</ul>'); listDepth--; }
+      html.push(`<li>${bulletMatch[2]}</li>`);
+      continue;
+    }
+
+    if (line.trim() === '' && inList) {
+      html.push('</ul>'.repeat(listDepth + 1)); inList = false; listDepth = 0;
+    }
+  }
+  if (inList) html.push('</ul>'.repeat(listDepth + 1));
+  return html.join('\n');
+}
+
+function copyRichHtml(html: string): void {
+  // Create a hidden container, set innerHTML, select it, and copy via execCommand
+  // This is the most reliable way to get rich HTML onto the clipboard
+  const container = document.createElement('div');
+  container.innerHTML = html;
+  container.style.position = 'fixed';
+  container.style.left = '-9999px';
+  container.style.opacity = '0';
+  document.body.appendChild(container);
+
+  const range = document.createRange();
+  range.selectNodeContents(container);
+  const selection = window.getSelection();
+  selection?.removeAllRanges();
+  selection?.addRange(range);
+
+  document.execCommand('copy');
+
+  selection?.removeAllRanges();
+  document.body.removeChild(container);
+}
+
+function treeToPlainText(node: MindMapNodeType, depth = 0): string {
+  const indent = '\t'.repeat(depth);
+  const lines = [indent + node.text];
+  for (const child of node.children) {
+    lines.push(treeToPlainText(child, depth + 1));
+  }
+  return lines.join('\n');
+}
+
+function CopyButtons({ root, colors }: { root: MindMapNodeType; colors: Record<string, string> }) {
+  const [copiedType, setCopiedType] = useState<string | null>(null);
+
+  const handleCopyRich = useCallback(async () => {
+    const md = serializeToMarkdown(root);
+    const html = await mdToHtml(md);
+    try {
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          'text/html': new Blob([html], { type: 'text/html' }),
+          'text/plain': new Blob([md], { type: 'text/plain' }),
+        }),
+      ]);
+    } catch {
+      copyRichHtml(html);
+    }
+    setCopiedType('rich');
+    setTimeout(() => setCopiedType(null), 1500);
   }, [root]);
 
+  const handleCopyPlain = useCallback(() => {
+    const text = treeToPlainText(root);
+    navigator.clipboard.writeText(text);
+    setCopiedType('plain');
+    setTimeout(() => setCopiedType(null), 1500);
+  }, [root]);
+
+  const btnStyle = (active: boolean) => ({
+    background: active ? colors.nodeSelected : colors.nodeBg,
+    border: `1px solid ${colors.nodeBorder}`,
+    color: active ? '#fff' : colors.textPrimary,
+    padding: '6px 10px',
+    borderRadius: 6,
+    cursor: 'pointer' as const,
+    fontSize: 12,
+    transition: 'background 0.2s, color 0.2s',
+  });
+
   return (
-    <button
-      onClick={handleCopy}
-      title="Copy markdown to clipboard"
-      style={{
-        background: copied ? colors.nodeSelected : colors.nodeBg,
-        border: `1px solid ${colors.nodeBorder}`,
-        color: copied ? '#fff' : colors.textPrimary,
-        padding: '6px 10px',
-        borderRadius: 6,
-        cursor: 'pointer',
-        fontSize: 12,
-        transition: 'background 0.2s, color 0.2s',
-      }}
-    >
-      {copied ? 'Copied!' : 'Copy'}
-    </button>
+    <>
+      <button onClick={handleCopyPlain} title="Copy as plain text (tab-indented)" style={btnStyle(copiedType === 'plain')}>
+        {copiedType === 'plain' ? 'Copied!' : 'Text'}
+      </button>
+      <button onClick={handleCopyRich} title="Copy as rich HTML (for Google Docs, Word)" style={btnStyle(copiedType === 'rich')}>
+        {copiedType === 'rich' ? 'Copied!' : 'Copy'}
+      </button>
+    </>
   );
 }

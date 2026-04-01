@@ -8,16 +8,22 @@ export function serializeToMarkdown(root: MindMapNode): string {
 
 function serializeNode(node: MindMapNode, depth: number, lines: string[]): void {
   if (depth === 0) {
-    // Root → H1
     lines.push(`# ${node.text}`);
   } else if (depth <= 5) {
-    // Depths 1-5 → H2-H6
     lines.push('');
     lines.push(`${'#'.repeat(depth + 1)} ${node.text}`);
   } else {
-    // Depth 6+ → nested bullets
     const indent = '  '.repeat(depth - 6);
     lines.push(`${indent}- ${node.text}`);
+  }
+
+  if (node.imageUrl) {
+    if (depth <= 5) {
+      lines.push(`![image](${node.imageUrl})`);
+    } else {
+      const indent = '  '.repeat(depth - 6);
+      lines.push(`${indent}  ![image](${node.imageUrl})`);
+    }
   }
 
   for (const child of node.children) {

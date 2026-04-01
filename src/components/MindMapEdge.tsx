@@ -1,10 +1,19 @@
 import type { LayoutNode } from '../types';
 import { useTheme } from '../hooks/useTheme';
-import { BRANCH_COLORS } from '../utils/constants';
+import { BRANCH_COLORS, LAYOUT } from '../utils/constants';
 
 interface Props {
   parentLayout: LayoutNode;
   childLayout: LayoutNode;
+}
+
+/** Get the Y where edges should connect — at text row center, not full node center */
+function connectY(layout: LayoutNode): number {
+  if (layout.hasImage) {
+    // Text row is at the top of the node; connect at its vertical center
+    return layout.y - layout.height / 2 + LAYOUT.NODE_HEIGHT / 2;
+  }
+  return layout.y;
 }
 
 export function MindMapEdge({ parentLayout, childLayout }: Props) {
@@ -14,14 +23,13 @@ export function MindMapEdge({ parentLayout, childLayout }: Props) {
   const startX = isRight
     ? parentLayout.x + parentLayout.width
     : parentLayout.x;
-  const startY = parentLayout.y;
+  const startY = connectY(parentLayout);
 
   const endX = isRight
     ? childLayout.x
     : childLayout.x + childLayout.width;
-  const endY = childLayout.y;
+  const endY = connectY(childLayout);
 
-  // Smoother S-curve with offset control points
   const dx = Math.abs(endX - startX);
   const cp = dx * 0.5;
   const cpx1 = isRight ? startX + cp : startX - cp;

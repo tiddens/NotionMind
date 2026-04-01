@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import filesRouter from './routes/files.js';
+import imagesRouter from './routes/images.js';
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '3001', 10);
@@ -10,6 +11,7 @@ app.use(cors());
 app.use(express.json());
 app.use(express.text());
 app.use('/api/files', filesRouter);
+app.use('/api/images', imagesRouter);
 
 // In production, serve the built frontend
 const distPath = path.join(process.cwd(), 'dist');

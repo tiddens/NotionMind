@@ -85,6 +85,8 @@ export default function App() {
     undo: mindMap.undo,
     redo: mindMap.redo,
     save: mindMap.save,
+    copyNodes: mindMap.copyNodes,
+    paste: mindMap.paste,
   }), [
     mindMap.editingId,
     mindMap.navigateUp, mindMap.navigateDown, mindMap.navigateLeft, mindMap.navigateRight,
@@ -92,7 +94,7 @@ export default function App() {
     mindMap.doMoveUp, mindMap.doMoveDown, mindMap.doMoveLeft, mindMap.doMoveRight,
     mindMap.doToggleCollapse, mindMap.selectRoot,
     mindMap.startEdit, mindMap.startEditEmpty, mindMap.confirmEdit, mindMap.cancelEdit,
-    mindMap.undo, mindMap.redo, mindMap.save,
+    mindMap.undo, mindMap.redo, mindMap.save, mindMap.copyNodes, mindMap.paste,
   ]);
 
   useKeyboard(keyboardActions);
@@ -114,15 +116,17 @@ export default function App() {
       <MindMapCanvas
         root={mindMap.tree}
         selectedId={mindMap.selectedId}
+        selectedIds={mindMap.selectedIds}
         editingId={mindMap.editingId}
         editText={mindMap.editText}
-        onSelect={mindMap.setSelectedId}
+        onSelect={mindMap.selectSingle}
         onStartEdit={mindMap.startEdit}
         onEditChange={mindMap.setEditText}
         onEditConfirm={mindMap.confirmEdit}
         onEditCancel={mindMap.cancelEdit}
         onTogglePreview={() => setPreviewVisible(v => !v)}
         previewVisible={previewVisible}
+        onRemoveImage={mindMap.doRemoveImage}
       />
       <MarkdownPreview
         root={mindMap.tree}

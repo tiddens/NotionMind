@@ -4,6 +4,7 @@ export interface MindMapNode {
   children: MindMapNode[];
   collapsed: boolean;
   side?: 'left' | 'right'; // Only used for direct children of root
+  imageUrl?: string; // relative path to stored image
 }
 
 export interface LayoutNode {
@@ -14,7 +15,8 @@ export interface LayoutNode {
   height: number;
   side: 'left' | 'right';
   depth: number;
-  branchIndex: number; // index of the top-level branch this node belongs to
+  branchIndex: number;
+  hasImage: boolean; // whether node has an image (affects edge connection point)
 }
 
 export interface FileEntry {
