@@ -9,11 +9,9 @@ if (!fs.existsSync(MAPS_DIR)) {
 }
 
 function safePath(name: string): string | null {
-  const normalized = path.normalize(name).replace(/\\/g, '/');
-  if (normalized.startsWith('..') || normalized.startsWith('/') || normalized.includes('/../')) {
-    return null;
-  }
-  return normalized;
+  const resolved = path.resolve(MAPS_DIR, name);
+  if (!resolved.startsWith(path.resolve(MAPS_DIR) + path.sep) && resolved !== path.resolve(MAPS_DIR)) return null;
+  return path.relative(MAPS_DIR, resolved);
 }
 
 function safeFile(name: string): string | null {
@@ -81,7 +79,7 @@ router.post('/:name', (req: Request, res: Response) => {
   const filePath = path.join(MAPS_DIR, name);
   try {
     const dir = path.dirname(filePath);
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(filePath, typeof req.body === 'string' ? req.body : JSON.stringify(req.body), 'utf-8');
     res.json({ ok: true });
   } catch {
@@ -115,7 +113,7 @@ router.patch('/:name', (req: Request, res: Response) => {
     if (!newName) { res.status(400).json({ error: 'Invalid new filename' }); return; }
     const newPath = path.join(MAPS_DIR, newName);
     const newDir = path.dirname(newPath);
-    if (!fs.existsSync(newDir)) fs.mkdirSync(newDir, { recursive: true });
+    fs.mkdirSync(newDir, { recursive: true });
     fs.renameSync(filePath, newPath);
     res.json({ ok: true, name: newName });
   } catch {

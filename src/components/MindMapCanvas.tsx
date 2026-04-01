@@ -205,6 +205,10 @@ async function fetchImageAsDataUrl(filename: string): Promise<string | null> {
   } catch { return null; }
 }
 
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
 async function mdToHtml(md: string): Promise<string> {
   const lines = md.split('\n');
   const html: string[] = [];
@@ -216,7 +220,7 @@ async function mdToHtml(md: string): Promise<string> {
     if (imgMatch) {
       const dataUrl = await fetchImageAsDataUrl(imgMatch[1]);
       if (dataUrl) {
-        html.push(`<img src="${dataUrl}" alt="image" style="max-width:600px" />`);
+        html.push(`<img src="${escapeHtml(dataUrl)}" alt="image" style="max-width:600px" />`);
       }
       continue;
     }
@@ -225,7 +229,7 @@ async function mdToHtml(md: string): Promise<string> {
     if (headingMatch) {
       if (inList) { html.push('</ul>'.repeat(listDepth + 1)); inList = false; listDepth = 0; }
       const level = headingMatch[1].length;
-      html.push(`<h${level}>${headingMatch[2]}</h${level}>`);
+      html.push(`<h${level}>${escapeHtml(headingMatch[2])}</h${level}>`);
       continue;
     }
 
@@ -235,7 +239,7 @@ async function mdToHtml(md: string): Promise<string> {
       if (!inList) { html.push('<ul>'); inList = true; listDepth = 0; }
       while (listDepth < depth) { html.push('<ul>'); listDepth++; }
       while (listDepth > depth) { html.push('</ul>'); listDepth--; }
-      html.push(`<li>${bulletMatch[2]}</li>`);
+      html.push(`<li>${escapeHtml(bulletMatch[2])}</li>`);
       continue;
     }
 

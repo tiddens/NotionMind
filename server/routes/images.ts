@@ -15,11 +15,11 @@ const ALLOWED_TYPES: Record<string, string> = {
   'image/jpeg': '.jpg',
   'image/gif': '.gif',
   'image/webp': '.webp',
-  'image/svg+xml': '.svg',
 };
 
 function safeImageName(name: string): string | null {
   const base = path.basename(name);
+  if (base !== name) return null; // reject if path separators were stripped
   if (base.includes('..') || base.startsWith('.')) return null;
   if (!/^[\w-]+\.\w+$/.test(base)) return null;
   return base;
@@ -43,6 +43,14 @@ router.post('/', (req: Request, res: Response) => {
       const buffer = Buffer.concat(chunks);
       if (buffer.length === 0) { res.status(400).json({ error: 'Empty body' }); return; }
       if (buffer.length > 10 * 1024 * 1024) { res.status(400).json({ error: 'Image too large (max 10MB)' }); return; }
+
+      // Validate magic bytes match declared Content-Type
+      const magicValid =
+        (contentType === 'image/png' && buffer.length >= 4 && buffer.subarray(0, 4).toString('hex') === '89504e47') ||
+        (contentType === 'image/jpeg' && buffer.length >= 3 && buffer.subarray(0, 3).toString('hex') === 'ffd8ff') ||
+        (contentType === 'image/gif' && buffer.length >= 3 && buffer.subarray(0, 3).toString('ascii') === 'GIF') ||
+        (contentType === 'image/webp' && buffer.length >= 12 && buffer.subarray(0, 4).toString('ascii') === 'RIFF' && buffer.subarray(8, 12).toString('ascii') === 'WEBP');
+      if (!magicValid) { res.status(400).json({ error: 'File content does not match declared Content-Type' }); return; }
 
       const filename = crypto.randomBytes(8).toString('hex') + ext;
       fs.writeFileSync(path.join(IMAGES_DIR, filename), buffer);
