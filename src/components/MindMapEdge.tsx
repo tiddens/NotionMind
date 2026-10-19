@@ -1,6 +1,6 @@
 import type { LayoutNode } from '../types';
 import { useTheme } from '../hooks/useTheme';
-import { BRANCH_COLORS, LAYOUT } from '../utils/constants';
+import { BRANCH_COLORS } from '../utils/constants';
 
 interface Props {
   parentLayout: LayoutNode;
@@ -11,7 +11,7 @@ interface Props {
 function connectY(layout: LayoutNode): number {
   if (layout.hasImage) {
     // Text row is at the top of the node; connect at its vertical center
-    return layout.y - layout.height / 2 + LAYOUT.NODE_HEIGHT / 2;
+    return layout.y - layout.height / 2 + layout.textHeight / 2;
   }
   return layout.y;
 }

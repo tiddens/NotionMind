@@ -11,6 +11,8 @@ node_modules
 dist
 dist-ssr
 *.local
+playwright-report
+test-results
 
 # User mind map files (only ship the sample)
 maps/*

@@ -59,10 +59,12 @@ export function useMindMap() {
   const fileManager = useFileManager();
 
   const initialized = useRef(false);
-  if (!initialized.current) {
-    undoManager.current.push(tree);
-    initialized.current = true;
-  }
+  useEffect(() => {
+    if (!initialized.current) {
+      undoManager.current.push(tree);
+      initialized.current = true;
+    }
+  }, [tree]);
 
   const selectSingle = useCallback((id: string | null) => {
     setSelectedId(id);
@@ -121,7 +123,7 @@ export function useMindMap() {
     const { tree: newTree, nextSelectId } = removeNode(tree, selectedId);
     pushState(newTree);
     selectSingle(nextSelectId);
-  }, [tree, selectedId, pushState]);
+  }, [tree, selectedId, pushState, selectSingle]);
 
   const doMoveUp = useCallback(() => {
     if (!selectedId) return;

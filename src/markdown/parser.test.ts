@@ -18,6 +18,14 @@ describe('parseMarkdown', () => {
     expect(tree.children[1].text).toBe('Child2');
   });
 
+  it('parses Windows line endings in headings, lists and image references', () => {
+    const tree = parseMarkdown('# Root\r\n\r\n## Topic\r\n- Item\r\n  - Sub item\r\n![](photo.png)\r\n');
+    expect(tree.text).toBe('Root');
+    expect(tree.children[0].text).toBe('Topic');
+    expect(tree.children[0].children[0].text).toBe('Item');
+    expect(tree.children[0].children[0].children[0]).toMatchObject({ text: 'Sub item', imageUrl: 'photo.png' });
+  });
+
   it('parses bullet lists', () => {
     const md = '# Root\n\n## Topic\n- Item 1\n  - Sub item\n- Item 2';
     const tree = parseMarkdown(md);

@@ -1,10 +1,8 @@
-import { useEffect, useRef } from 'react';
 import type { LayoutNode } from '../types';
 import { useTheme } from '../hooks/useTheme';
 import { BRANCH_COLORS, LAYOUT } from '../utils/constants';
 
 const TEXT_LEFT_PAD = 12;
-const TEXT_ROW_HEIGHT = LAYOUT.NODE_HEIGHT;
 
 interface Props {
   layout: LayoutNode;
@@ -15,13 +13,10 @@ interface Props {
   isEditing: boolean;
   isCollapsed: boolean;
   hasChildren: boolean;
-  editText: string;
-  onEditChange: (text: string) => void;
-  onEditConfirm: () => void;
-  onEditCancel: () => void;
   onClick: () => void;
   onDoubleClick: () => void;
   onRemoveImage?: () => void;
+  onViewImage?: () => void;
 }
 
 export function MindMapNode({
@@ -33,32 +28,70 @@ export function MindMapNode({
   isEditing,
   isCollapsed,
   hasChildren,
-  editText,
-  onEditChange,
-  onEditConfirm,
-  onEditCancel,
   onClick,
   onDoubleClick,
   onRemoveImage,
+  onViewImage,
 }: Props) {
   const { colors, mode } = useTheme();
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (isEditing && inputRef.current) {
-      inputRef.current.focus();
-      inputRef.current.select();
-    }
-  }, [isEditing]);
 
   const branchColor = BRANCH_COLORS[layout.branchIndex % BRANCH_COLORS.length];
   const isLight = mode === 'light';
   const rx = 8;
   const hasImage = !!imageUrl;
+  const imageWidth = layout.imageWidth ?? LAYOUT.IMAGE_MAX_WIDTH;
+  const imageHeight = layout.imageHeight ?? LAYOUT.IMAGE_MAX_HEIGHT;
+  const imagePreview = hasImage && (
+    <g>
+      <g
+        className="image-thumbnail"
+        role="button"
+        tabIndex={0}
+        aria-label={`View image: ${text}`}
+        style={{ cursor: 'zoom-in' }}
+        onMouseDown={event => event.stopPropagation()}
+        onClick={event => {
+          event.stopPropagation();
+          event.currentTarget.focus();
+          onViewImage?.();
+        }}
+        onDoubleClick={event => event.stopPropagation()}
+        onKeyDown={event => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            event.stopPropagation();
+            onViewImage?.();
+          }
+        }}
+      >
+        <title>Open full-screen image</title>
+        <image
+          href={`/api/images/${encodeURIComponent(imageUrl!)}`}
+          x={(layout.width - imageWidth) / 2}
+          y={layout.textHeight + LAYOUT.IMAGE_PADDING / 2}
+          width={imageWidth}
+          height={imageHeight}
+          preserveAspectRatio="xMidYMid meet"
+        />
+      </g>
+      {isSelected && onRemoveImage && (
+        <g
+          transform={`translate(${(layout.width + imageWidth) / 2 - 2}, ${layout.textHeight + LAYOUT.IMAGE_PADDING / 2 + 2})`}
+          onClick={event => { event.stopPropagation(); onRemoveImage(); }}
+          onDoubleClick={event => event.stopPropagation()}
+          style={{ cursor: 'pointer' }}
+        >
+          <title>Remove image</title>
+          <circle r={8} fill="#ce4334" />
+          <text textAnchor="middle" dominantBaseline="central" fill="#fff" fontSize={11} fontWeight={700}>×</text>
+        </g>
+      )}
+    </g>
+  );
 
   // Root node
   if (isRoot) {
-    const rootRx = layout.height / 2;
+    const rootRx = hasImage || layout.textLines.length > 1 ? rx : layout.height / 2;
     return (
       <g
         transform={`translate(${layout.x}, ${layout.y - layout.height / 2})`}
@@ -75,21 +108,10 @@ export function MindMapNode({
           stroke={isSelected ? '#ce4334' : 'transparent'}
           strokeWidth={isSelected ? 2.5 : 0}
         />
-        {isEditing ? renderInput(layout, editText, '#ffffff', true, inputRef, onEditChange, onEditConfirm, onEditCancel) : (
-          <text
-            x={layout.width / 2}
-            y={layout.height / 2}
-            textAnchor="middle"
-            dominantBaseline="central"
-            fill="#ffffff"
-            fontSize={14}
-            fontWeight={600}
-            fontFamily="system-ui, -apple-system, sans-serif"
-            pointerEvents="none"
-          >
-            {text}
-          </text>
+        {!isEditing && (
+          <NodeText layout={layout} text={text} color="#ffffff" centered />
         )}
+        {imagePreview}
       </g>
     );
   }
@@ -97,7 +119,6 @@ export function MindMapNode({
   // Branch nodes
   const borderColor = isSelected ? colors.nodeSelected : colors.nodeBorder;
   const borderWidth = isSelected ? 2 : 1;
-  const textY = hasImage ? TEXT_ROW_HEIGHT / 2 : layout.height / 2;
 
   return (
     <g
@@ -122,49 +143,11 @@ export function MindMapNode({
         strokeWidth={borderWidth}
       />
       {/* Text */}
-      {isEditing ? renderInput(
-        { ...layout, height: TEXT_ROW_HEIGHT },
-        editText, colors.nodeText, false, inputRef,
-        onEditChange, onEditConfirm, onEditCancel,
-      ) : (
-        <text
-          x={TEXT_LEFT_PAD}
-          y={textY}
-          textAnchor="start"
-          dominantBaseline="central"
-          fill={colors.nodeText}
-          fontSize={13}
-          fontWeight={layout.depth === 1 ? 500 : 400}
-          fontFamily="system-ui, -apple-system, sans-serif"
-          pointerEvents="none"
-        >
-          {text}
-        </text>
+      {!isEditing && (
+        <NodeText layout={layout} text={text} color={colors.nodeText} />
       )}
       {/* Image */}
-      {hasImage && (
-        <g>
-          <image
-            href={`/api/images/${imageUrl}`}
-            x={(layout.width - LAYOUT.IMAGE_MAX_WIDTH) / 2}
-            y={TEXT_ROW_HEIGHT + LAYOUT.IMAGE_PADDING / 2}
-            width={LAYOUT.IMAGE_MAX_WIDTH}
-            height={LAYOUT.IMAGE_MAX_HEIGHT}
-            preserveAspectRatio="xMidYMid meet"
-          />
-          {/* Remove image button — visible when selected */}
-          {isSelected && onRemoveImage && (
-            <g
-              transform={`translate(${(layout.width + LAYOUT.IMAGE_MAX_WIDTH) / 2 - 2}, ${TEXT_ROW_HEIGHT + LAYOUT.IMAGE_PADDING / 2 + 2})`}
-              onClick={(e) => { e.stopPropagation(); onRemoveImage(); }}
-              style={{ cursor: 'pointer' }}
-            >
-              <circle r={8} fill="#ce4334" />
-              <text textAnchor="middle" dominantBaseline="central" fill="#fff" fontSize={11} fontWeight={700}>×</text>
-            </g>
-          )}
-        </g>
-      )}
+      {imagePreview}
       {/* Collapse indicator */}
       {isCollapsed && hasChildren && (
         <g transform={`translate(${layout.side === 'right' ? layout.width + 6 : -12}, ${layout.height / 2})`}>
@@ -176,38 +159,25 @@ export function MindMapNode({
   );
 }
 
-function renderInput(
-  layout: LayoutNode,
-  editText: string,
-  textColor: string,
-  centered: boolean,
-  inputRef: React.RefObject<HTMLInputElement | null>,
-  onEditChange: (text: string) => void,
-  onEditConfirm: () => void,
-  onEditCancel: () => void,
-) {
-  const pad = centered ? 12 : TEXT_LEFT_PAD - 2;
+function NodeText({ layout, text, color, centered = false }: { layout: LayoutNode; text: string; color: string; centered?: boolean }) {
+  const x = centered ? layout.width / 2 : TEXT_LEFT_PAD;
+  const firstY = (layout.textHeight - (layout.textLines.length - 1) * LAYOUT.NODE_LINE_HEIGHT) / 2;
   return (
-    <foreignObject x={pad} y={2} width={layout.width - pad - 8} height={layout.height - 4}>
-      <input
-        ref={inputRef}
-        value={editText}
-        onChange={(e) => onEditChange(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') { e.preventDefault(); onEditConfirm(); }
-          else if (e.key === 'Escape') { e.preventDefault(); onEditCancel(); }
-          e.stopPropagation();
-        }}
-        onBlur={onEditConfirm}
-        style={{
-          width: '100%', height: '100%',
-          background: 'transparent', border: 'none', outline: 'none',
-          color: textColor, fontSize: '13px',
-          fontFamily: 'system-ui, -apple-system, sans-serif',
-          textAlign: centered ? 'center' : 'left',
-          padding: 0, boxSizing: 'border-box',
-        }}
-      />
-    </foreignObject>
+    <text
+      x={x}
+      y={firstY}
+      aria-label={text}
+      textAnchor={centered ? 'middle' : 'start'}
+      dominantBaseline="central"
+      fill={color}
+      fontSize={centered ? 14 : 13}
+      fontWeight={centered ? 600 : layout.depth === 1 ? 500 : 400}
+      fontFamily="system-ui, -apple-system, sans-serif"
+      pointerEvents="none"
+    >
+      {layout.textLines.map((line, index) => (
+        <tspan key={index} x={x} y={firstY + index * LAYOUT.NODE_LINE_HEIGHT}>{line}{index < layout.textLines.length - 1 ? ' ' : ''}</tspan>
+      ))}
+    </text>
   );
 }

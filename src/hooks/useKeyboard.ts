@@ -26,8 +26,9 @@ interface KeyboardActions {
   copyNodes: () => void;
 }
 
-export function useKeyboard(actions: KeyboardActions) {
+export function useKeyboard(actions: KeyboardActions, enabled = true) {
   useEffect(() => {
+    if (!enabled) return;
     const handler = (e: KeyboardEvent) => {
       const isEditing = actions.editingId !== null;
 
@@ -146,5 +147,5 @@ export function useKeyboard(actions: KeyboardActions) {
 
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [actions]);
+  }, [actions, enabled]);
 }

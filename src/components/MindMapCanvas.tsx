@@ -1,11 +1,17 @@
-import { useRef, useMemo, useCallback, useState } from 'react';
-import type { MindMapNode as MindMapNodeType, LayoutNode } from '../types';
+import { useRef, useMemo, useCallback, useState, useEffect } from 'react';
+import type { MindMapNode as MindMapNodeType } from '../types';
 import { computeLayout } from '../layout/treeLayout';
 import { serializeToMarkdown } from '../markdown/serializer';
-import { collectVisibleNodes, collectEdges } from '../model/MindMapTree';
+import { collectVisibleNodes, collectEdges, updateText } from '../model/MindMapTree';
 import { MindMapNode } from './MindMapNode';
 import { MindMapEdge } from './MindMapEdge';
+import { NodeEditor } from './NodeEditor';
 import { useTheme } from '../hooks/useTheme';
+import { useImageSizes } from '../hooks/useImageSizes';
+import { LAYOUT } from '../utils/constants';
+
+const MIN_ZOOM = 0.2;
+const MAX_ZOOM = 3;
 
 interface Props {
   root: MindMapNodeType;
@@ -21,6 +27,7 @@ interface Props {
   onTogglePreview: () => void;
   previewVisible: boolean;
   onRemoveImage: (nodeId: string) => void;
+  onViewImage: (filename: string, title: string) => void;
 }
 
 export function MindMapCanvas({
@@ -37,22 +44,43 @@ export function MindMapCanvas({
   onTogglePreview,
   previewVisible,
   onRemoveImage,
+  onViewImage,
 }: Props) {
   const { colors } = useTheme();
   const containerRef = useRef<HTMLDivElement>(null);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
-  const [zoom, setZoom] = useState(1);
+  const svgRef = useRef<SVGSVGElement>(null);
+  const [{ pan, zoom }, setView] = useState({ pan: { x: 0, y: 0 }, zoom: 1 });
   const [isPanning, setIsPanning] = useState(false);
+  const [editorSize, setEditorSize] = useState<{ id: string; width: number; textHeight: number } | null>(null);
   const panStart = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
 
-  const layoutMap = useMemo(() => computeLayout(root), [root]);
   const edges = useMemo(() => collectEdges(root) as { parentId: string; childId: string }[], [root]);
   const visibleNodes = useMemo(() => collectVisibleNodes(root), [root]);
+  const imageFilenames = useMemo(() => [...new Set(visibleNodes.flatMap(node => node.imageUrl ? [node.imageUrl] : []))], [visibleNodes]);
+  const imageSizes = useImageSizes(imageFilenames);
+  const savedLayout = useMemo(() => computeLayout(root, imageSizes), [root, imageSizes]);
+  const layoutMap = useMemo(() => {
+    const saved = editingId ? savedLayout.get(editingId) : undefined;
+    if (!editingId || !saved) return savedLayout;
+    const width = editorSize?.id === editingId ? editorSize.width : Math.min(LAYOUT.NODE_MAX_WIDTH, Math.max(240, saved.width));
+    const textHeight = editorSize?.id === editingId ? editorSize.textHeight : undefined;
+    const layout = computeLayout(updateText(root, editingId, editText), imageSizes, new Map([[editingId, { width, textHeight }]]));
+    const edited = layout.get(editingId)!;
+    // Keep the edited card's top-left corner still as its height changes.
+    const dx = saved.x - edited.x;
+    const dy = saved.y - saved.height / 2 - (edited.y - edited.height / 2);
+    for (const item of layout.values()) { item.x += dx; item.y += dy; }
+    return layout;
+  }, [root, imageSizes, editingId, editText, savedLayout, editorSize]);
+  const onEditorSizeChange = useCallback((size: { width: number; textHeight: number }) => {
+    if (!editingId) return;
+    setEditorSize(previous => previous?.id === editingId && Math.abs(previous.width - size.width) < 0.01 && previous.textHeight === size.textHeight ? previous : { id: editingId, ...size });
+  }, [editingId]);
 
   // Compute SVG viewBox from layout bounds
   const bounds = useMemo(() => {
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    layoutMap.forEach((l) => {
+    savedLayout.forEach((l) => {
       minX = Math.min(minX, l.x - 20);
       minY = Math.min(minY, l.y - l.height / 2 - 20);
       maxX = Math.max(maxX, l.x + l.width + 20);
@@ -69,20 +97,47 @@ export function MindMapCanvas({
     const cx = minX + rawW / 2;
     const cy = minY + rawH / 2;
     return { x: cx - w / 2, y: cy - h / 2, w, h };
-  }, [layoutMap]);
+  }, [savedLayout]);
+  const viewBox = `${bounds.x} ${bounds.y} ${bounds.w} ${bounds.h}`;
+  const editingLayout = editingId ? layoutMap.get(editingId) : undefined;
 
-  const handleWheel = useCallback((e: React.WheelEvent) => {
-    if (e.ctrlKey || e.metaKey) {
-      e.preventDefault();
-      const delta = e.deltaY > 0 ? 0.9 : 1.1;
-      setZoom(z => Math.max(0.2, Math.min(3, z * delta)));
-    } else {
-      setPan(p => ({
-        x: p.x - e.deltaX,
-        y: p.y - e.deltaY,
-      }));
-    }
+  const zoomBy = useCallback((factor: number, clientX?: number, clientY?: number) => {
+    const canvas = containerRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = clientX === undefined ? 0 : clientX - rect.left - rect.width / 2;
+    const y = clientY === undefined ? 0 : clientY - rect.top - rect.height / 2;
+    setView(previous => {
+      const nextZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, previous.zoom * factor));
+      if (nextZoom === previous.zoom) return previous;
+      const ratio = nextZoom / previous.zoom;
+      return {
+        zoom: nextZoom,
+        pan: { x: x - (x - previous.pan.x) * ratio, y: y - (y - previous.pan.y) * ratio },
+      };
+    });
   }, []);
+
+  useEffect(() => {
+    const canvas = containerRef.current;
+    if (!canvas) return;
+    const handleWheel = (event: WheelEvent) => {
+      if (!event.ctrlKey && !event.metaKey && event.target instanceof HTMLTextAreaElement && event.target.scrollHeight > event.target.clientHeight + 1) return;
+      event.preventDefault();
+      const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? canvas.clientHeight : 1;
+      if (event.ctrlKey || event.metaKey) {
+        zoomBy(Math.exp(Math.max(-1, Math.min(1, -event.deltaY * unit * 0.002))), event.clientX, event.clientY);
+      } else {
+        setView(previous => ({
+          ...previous,
+          pan: { x: previous.pan.x - event.deltaX * unit, y: previous.pan.y - event.deltaY * unit },
+        }));
+      }
+    };
+    // React wheel listeners are passive; a native listener can cancel browser zoom.
+    canvas.addEventListener('wheel', handleWheel, { passive: false });
+    return () => canvas.removeEventListener('wheel', handleWheel);
+  }, [zoomBy]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (e.button === 1 || (e.button === 0 && e.altKey)) {
@@ -94,10 +149,10 @@ export function MindMapCanvas({
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     if (!isPanning) return;
-    setPan({
+    setView(previous => ({ ...previous, pan: {
       x: panStart.current.panX + (e.clientX - panStart.current.x),
       y: panStart.current.panY + (e.clientY - panStart.current.y),
-    });
+    } }));
   }, [isPanning]);
 
   const handleMouseUp = useCallback(() => {
@@ -107,23 +162,25 @@ export function MindMapCanvas({
   return (
     <div
       ref={containerRef}
+      role="region"
+      aria-label="Mind map canvas"
       style={{
         flex: 1,
-        overflow: 'hidden',
+        overflow: 'clip',
         background: colors.bgPrimary,
         cursor: isPanning ? 'grabbing' : 'default',
         position: 'relative',
       }}
-      onWheel={handleWheel}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
     >
       <svg
+        ref={svgRef}
         width="100%"
         height="100%"
-        viewBox={`${bounds.x} ${bounds.y} ${bounds.w} ${bounds.h}`}
+        viewBox={viewBox}
         style={{
           transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
           transformOrigin: 'center center',
@@ -157,17 +214,32 @@ export function MindMapCanvas({
               isEditing={node.id === editingId}
               isCollapsed={node.collapsed}
               hasChildren={node.children.length > 0}
-              editText={node.id === editingId ? editText : node.text}
-              onEditChange={onEditChange}
-              onEditConfirm={onEditConfirm}
-              onEditCancel={onEditCancel}
               onClick={() => onSelect(node.id)}
               onDoubleClick={() => onStartEdit(node.id)}
               onRemoveImage={node.imageUrl ? () => onRemoveImage(node.id) : undefined}
+              onViewImage={node.imageUrl ? () => onViewImage(node.imageUrl!, node.text) : undefined}
             />
           );
         })}
       </svg>
+      {editingLayout && (
+        <NodeEditor
+          key={editingId}
+          layout={editingLayout}
+          svgRef={svgRef}
+          canvasRef={containerRef}
+          pan={pan}
+          zoom={zoom}
+          viewBox={viewBox}
+          text={editText}
+          color={editingLayout.depth === 0 ? '#ffffff' : colors.nodeText}
+          onChange={onEditChange}
+          onConfirm={onEditConfirm}
+          onCancel={onEditCancel}
+          preferredWidth={Math.min(LAYOUT.NODE_MAX_WIDTH, Math.max(240, savedLayout.get(editingLayout.id)!.width))}
+          onSizeChange={onEditorSizeChange}
+        />
+      )}
       {/* Top-right buttons */}
       <div style={{ position: 'absolute', top: 10, right: 10, display: 'flex', gap: 6 }}>
         <CopyButtons root={root} colors={colors} />
@@ -187,6 +259,37 @@ export function MindMapCanvas({
         >
           MD
         </button>
+      </div>
+      <div
+        role="group"
+        aria-label="Mind map zoom controls"
+        style={{ position: 'absolute', bottom: 14, right: 14, display: 'flex', gap: 4, padding: 4, borderRadius: 8, background: colors.nodeBg, border: `1px solid ${colors.nodeBorder}`, boxShadow: '0 2px 8px #00000014' }}
+        onMouseDown={event => event.stopPropagation()}
+        onKeyDown={event => event.stopPropagation()}
+      >
+        <button
+          type="button"
+          aria-label="Zoom out"
+          title="Zoom out (Ctrl + mouse wheel)"
+          disabled={zoom <= MIN_ZOOM}
+          onClick={() => zoomBy(1 / 1.25)}
+          style={{ minWidth: 34, minHeight: 34, border: 0, borderRadius: 5, background: 'transparent', color: colors.textPrimary, fontSize: 20, cursor: zoom <= MIN_ZOOM ? 'default' : 'pointer', opacity: zoom <= MIN_ZOOM ? 0.35 : 1 }}
+        >−</button>
+        <button
+          type="button"
+          aria-label="Reset mind map view"
+          title="Reset zoom to 100% and center the map"
+          onClick={() => setView({ zoom: 1, pan: { x: 0, y: 0 } })}
+          style={{ minWidth: 58, minHeight: 34, border: 0, borderRadius: 5, background: 'transparent', color: colors.textPrimary, fontSize: 12, fontVariantNumeric: 'tabular-nums', cursor: 'pointer' }}
+        >{Math.round(zoom * 100)}%</button>
+        <button
+          type="button"
+          aria-label="Zoom in"
+          title="Zoom in (Ctrl + mouse wheel)"
+          disabled={zoom >= MAX_ZOOM}
+          onClick={() => zoomBy(1.25)}
+          style={{ minWidth: 34, minHeight: 34, border: 0, borderRadius: 5, background: 'transparent', color: colors.textPrimary, fontSize: 20, cursor: zoom >= MAX_ZOOM ? 'default' : 'pointer', opacity: zoom >= MAX_ZOOM ? 0.35 : 1 }}
+        >+</button>
       </div>
     </div>
   );

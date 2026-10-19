@@ -7,6 +7,11 @@ export interface MindMapNode {
   imageUrl?: string; // relative path to stored image
 }
 
+export interface ImageDimensions {
+  width: number;
+  height: number;
+}
+
 export interface LayoutNode {
   id: string;
   x: number;
@@ -17,6 +22,10 @@ export interface LayoutNode {
   depth: number;
   branchIndex: number;
   hasImage: boolean; // whether node has an image (affects edge connection point)
+  textLines: string[];
+  textHeight: number;
+  imageWidth?: number;
+  imageHeight?: number;
 }
 
 export interface FileEntry {

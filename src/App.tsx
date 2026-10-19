@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, useCallback } from 'react';
 import { MindMapCanvas } from './components/MindMapCanvas';
 import { Sidebar } from './components/Sidebar';
 import { MarkdownPreview } from './components/MarkdownPreview';
+import { ImageViewer } from './components/ImageViewer';
 import { useMindMap } from './hooks/useMindMap';
 import { useKeyboard } from './hooks/useKeyboard';
 import { ThemeContext, getColors } from './hooks/useTheme';
@@ -33,6 +34,7 @@ export default function App() {
   const [themeMode, setThemeMode] = useState<ThemeMode>(getInitialTheme);
   const [sidebarVisible, setSidebarVisible] = useState(true);
   const [previewVisible, setPreviewVisible] = useState(false);
+  const [viewedImage, setViewedImage] = useState<{ filename: string; title: string } | null>(null);
 
   const toggleTheme = useCallback(() => {
     setThemeMode(prev => {
@@ -97,7 +99,7 @@ export default function App() {
     mindMap.undo, mindMap.redo, mindMap.save, mindMap.copyNodes, mindMap.paste,
   ]);
 
-  useKeyboard(keyboardActions);
+  useKeyboard(keyboardActions, viewedImage === null);
 
   return (
     <ThemeContext.Provider value={themeValue}>
@@ -127,12 +129,14 @@ export default function App() {
         onTogglePreview={() => setPreviewVisible(v => !v)}
         previewVisible={previewVisible}
         onRemoveImage={mindMap.doRemoveImage}
+        onViewImage={(filename, title) => setViewedImage({ filename, title })}
       />
       <MarkdownPreview
         root={mindMap.tree}
         visible={previewVisible}
         onToggle={() => setPreviewVisible(false)}
       />
+      {viewedImage && <ImageViewer {...viewedImage} onClose={() => setViewedImage(null)} />}
     </ThemeContext.Provider>
   );
 }

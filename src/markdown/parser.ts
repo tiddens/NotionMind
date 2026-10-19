@@ -33,7 +33,7 @@ function makeNode(text: string): MindMapNode {
 }
 
 export function parseMarkdown(markdown: string): MindMapNode {
-  const lines = markdown.split('\n');
+  const lines = markdown.split(/\r?\n/);
 
   // First pass: parse structural lines, attach images to previous node
   const nodes: { depth: number; text: string; imageUrl?: string }[] = [];

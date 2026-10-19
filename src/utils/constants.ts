@@ -1,5 +1,6 @@
 export const LAYOUT = {
   NODE_HEIGHT: 34,
+  NODE_LINE_HEIGHT: 20,
   NODE_PADDING_X: 14,
   NODE_CHAR_WIDTH: 7.2,
   NODE_MIN_WIDTH: 60,
@@ -12,7 +13,7 @@ export const LAYOUT = {
   IMAGE_PADDING: 8,
 } as const;
 
-export type ColorTheme = typeof DARK_COLORS;
+export type ColorTheme = { [Key in keyof typeof DARK_COLORS]: string };
 
 // Lumoview branch colors
 export const BRANCH_COLORS = [

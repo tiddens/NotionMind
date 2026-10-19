@@ -3,14 +3,25 @@ import cors from 'cors';
 import path from 'path';
 import filesRouter from './routes/files.js';
 import imagesRouter from './routes/images.js';
+import { createRequestGuard } from './security.js';
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '3001', 10);
+const trustedOrigins = [
+  `http://localhost:${PORT}`,
+  `http://127.0.0.1:${PORT}`,
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  ...(process.env.CORS_ORIGIN ? [new URL(process.env.CORS_ORIGIN).origin] : []),
+];
 
-app.use(cors({ origin: process.env.CORS_ORIGIN || 'http://localhost:5173' }));
+app.disable('x-powered-by');
+app.use(createRequestGuard(trustedOrigins));
+app.use(cors({ origin: trustedOrigins }));
 // Content Security Policy
-app.use((req, res, next) => {
+app.use((_req, res, next) => {
   res.setHeader('Content-Security-Policy', "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'");
+  res.setHeader('X-Content-Type-Options', 'nosniff');
   next();
 });
 
@@ -46,6 +57,6 @@ app.get('{*path}', (_req, res) => {
   res.sendFile(path.join(distPath, 'index.html'));
 });
 
-app.listen(PORT, () => {
-  console.log(`NotionMind server running on http://localhost:${PORT}`);
+app.listen(PORT, '127.0.0.1', () => {
+  console.log(`NotionMind server running on http://127.0.0.1:${PORT}`);
 });
